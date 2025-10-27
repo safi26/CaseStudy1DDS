@@ -1,0 +1,312 @@
+---
+title: "Project 1 - DDS"
+author: "Safi"
+date: "2025-10-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+# https://www.youtube.com/watch?v=UFZ7IT7dPKc
+#EDA
+library(DataExplorer)
+library(class)
+library(ggplot2)
+library(e1071)
+library(caret)
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(DataExplorer)
+library(corrplot)
+library(GGally)
+library(scales)
+library(pROC)
+#library(ggsankey)
+
+# Set Seed for reproducibility
+set.seed(123)
+
+# Read the dataset csv
+#input_data = read.csv("/Users/safi/OneDrive/SMU/MSDS_6306_Doing-Data-Science/Unit 8 and 9 Case Study 1/CaseStudy1-data.csv", header=TRUE)
+
+input_data = read.csv(file.choose(),header = TRUE)
+# Plot dataset metrics
+# Look for any missing values
+plot_missing(input_data, title = "Missing Data")
+plot_intro(input_data, title = "Case Study DataSet Metrics", geom_label_args = aes(label.size=1, size = 5)) + theme(axis.title.y = element_text(size = 16), axis.title.x = element_text(size = 16), axis.text.x.bottom = element_text(size = 14), axis.text.y.left = element_text(size = 10))
+
+
+
+# Change Attrition to numeric in input dataset
+input_data$Attrition <- ifelse(input_data$Attrition=="Yes", "0", "1")
+input_data$Attrition = as.numeric(input_data$Attrition)
+
+# Convert Business Travel factor to a numeric
+input_data$BusinessTravel[input_data$BusinessTravel == "Travel_Frequently"] <- 1
+input_data$BusinessTravel[input_data$BusinessTravel == "Travel_Rarely"] <- 2
+input_data$BusinessTravel[input_data$BusinessTravel == "Travel_Frequently"] <- 3
+input_data$BusinessTravel = as.numeric(input_data$BusinessTravel)
+# Convert Department factor to a numeric
+input_data$Department[input_data$Department == "Research & Development"] <- 1
+input_data$Department[input_data$Department == "Human Resources"] <- 2
+input_data$Department[input_data$Department == "Sales"] <- 3
+input_data$Department = as.numeric(input_data$Department)
+# Convert Gender factor to a numeric
+input_data$Gender[input_data$Gender == "Male"] <- 1
+input_data$Gender[input_data$Gender == "Female"] <- 2
+input_data$Gender = as.numeric(input_data$Gender)
+# Convert OverTime factor to a numeric
+input_data$OverTime[input_data$OverTime == "Yes"] <- 1
+input_data$OverTime[input_data$OverTime == "No"] <- 0
+input_data$OverTime = as.numeric(input_data$OverTime)
+
+# Select all numeric columns and put them in a  new data frame 
+numeric_df <- input_data %>% select(where(is.numeric))
+
+# Drop Employee Count and Standard Hours becuase their values remain same across the observations
+numeric_df$EmployeeCount <- NULL #because its not changing
+numeric_df$StandardHours <- NULL #because its not changing
+
+# Find the correlation between the factors
+cor_matrix <- cor(numeric_df, use = "complete.obs")
+# Plot the correlations
+corrplot(cor_matrix, method = "color", type = "lower", title = "Feature Correlation",tl.col = "#084569")
+
+# get all values for attrition from correlation matrix
+attrition_correlations <- cor_matrix["Attrition",]
+attrition_correlations_df <- data.frame(
+    Variable = names(attrition_correlations), # Get the factor name as Variable
+    Value = as.numeric(attrition_correlations) # Get the correlation value as Value
+)
+attrition_correlations_df<- attrition_correlations_df[attrition_correlations_df$Variable != "Attrition", ]     
+
+attrition_correlations_df$Variable <- factor(attrition_correlations_df$Variable, levels = attrition_correlations_df$Variable[order(attrition_correlations_df$Value, decreasing = TRUE)])
+ggplot(attrition_correlations_df, aes(x=Value, y=Variable)) + geom_bar(stat="identity", fill = "#084569") + ggtitle(label = "Correlation", subtitle = "Between Attrition and Other Factors/Columns") + theme_minimal() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+
+#Plotting factors with high attrition correlation
+temp_input_df <- input_data
+temp_input_df$OverTime[temp_input_df$OverTime == 1] <- "Yes"
+temp_input_df$OverTime[temp_input_df$OverTime == 0] <- "No"
+temp_input_df$Attrition[temp_input_df$Attrition == 1] <- "No"
+temp_input_df$Attrition[temp_input_df$Attrition == 0] <- "Yes"
+
+df_sum <- temp_input_df %>%
+    group_by(OverTime, Attrition) %>%
+    summarise(count = n(), .groups = "drop")
+ 
+# Grouped bar chart
+ggplot(df_sum, aes(x = OverTime, y=count,fill = Attrition)) +
+    geom_bar(stat = "identity", position = "dodge") +  # 'dodge' = side-by-side bars
+    labs(
+        title = "Count of Attrition by Overtime Status",
+        x = "Overtime",
+        y = "Count",
+        fill = "Attrition"
+    ) +
+  geom_text(aes(label = count), position = position_dodge(width = 0.9),
+            vjust = -0.3, size = 5, color = "black")+
+    theme_minimal()
+
+# Plotting Job involvement as part to show correlation with Attrition
+df_sum <- temp_input_df %>%
+    group_by(JobLevel, Attrition) %>%
+    summarise(count = n(), .groups = "drop")
+ 
+# Grouped bar chart
+ggplot(df_sum, aes(x = JobLevel, y=count,fill = Attrition)) +
+    geom_bar(stat = "identity", position = "dodge") +  # 'dodge' = side-by-side bars
+    labs(
+        title = "Count of Attrition by Job Level Status",
+        x = "Job Level",
+        y = "Count",
+        fill = "Attrition"
+    ) +
+  geom_text(aes(label = count), position = position_dodge(width = 0.9),
+            vjust = -0.3, size = 5, color = "black")+
+    theme_minimal()
+
+
+# Plotting Summary of Attritions
+data_summary <- input_data %>%
+  count(Attrition) %>%
+  mutate(perc = n / sum(n))
+
+ggplot(data_summary, aes(x = Attrition, y = n, )) +
+geom_col(fill = "#084569") +
+geom_text(aes(label = n), vjust = 2.5, hjust=0.5, color = "white", size = 10)+
+ # counts inside bars
+geom_text(aes(label = percent(perc)), vjust = -0.5, size = 6)+
+     # % above bars
+labs(
+
+    x = "Attrition",
+    y = "Count",
+) + ggtitle(label = "Summary of Attritions", subtitle = "Total Count and Percentage") +
+theme_minimal(base_size = 16)
+
+
+# Setting the correlation threshold
+threshold <- 0.75
+# Get upper triangle (since correlation matrix is symmetric)
+high_corr <- which(abs(cor_matrix) > threshold & abs(cor_matrix) < 1, arr.ind = TRUE)
+
+# Print pairs
+for(i in seq_len(nrow(high_corr))) {
+  cat(rownames(cor_matrix)[high_corr[i, 1]], 
+      "-", 
+      colnames(cor_matrix)[high_corr[i, 2]], 
+      ": ", 
+      round(cor_matrix[high_corr[i, 1], high_corr[i, 2]], 3), "\n")
+}
+
+#Overtime - Attrition
+input_data %>% ggplot(aes(x = JobInvolvement, y = Attrition, colour = JobInvolvement)) + geom_jitter() + ggtitle(label = "Correlation", subtitle = "Monthly Income & Job Level") 
+
+# General correlations - not related to attritions
+#MonthlyIncome - JobLevel
+input_data %>% ggplot(aes(x = MonthlyIncome, y = JobLevel, colour = JobLevel)) + geom_jitter() + ggtitle(label = "Correlation", subtitle = "Monthly Income & Job Level") 
+
+#working years - monthlyincome
+input_data %>% ggplot(aes(x = MonthlyIncome, y = TotalWorkingYears, colour = TotalWorkingYears)) + geom_jitter() + ggtitle(label = "Correlation", subtitle = "Monthly Income & Total Working Years") 
+
+#working PR - salary hike
+input_data %>% ggplot(aes(x = PerformanceRating, y = PercentSalaryHike, colour = PercentSalaryHike)) + geom_jitter() + ggtitle(label = "Correlation", subtitle = "Percent Salary Hike & Percent Salary Hike") 
+
+#working PR - salary hike
+input_data %>% ggplot(aes(x = JobLevel, y = TotalWorkingYears, colour = JobLevel)) + geom_jitter() + ggtitle(label = "Correlation", subtitle = "Job Level & Total Working Years") 
+
+#working PR - salary hike
+input_data %>% ggplot(aes(x = YearsWithCurrManager, y = YearsAtCompany, colour = JobLevel)) + geom_jitter() + ggtitle(label = "Correlation", subtitle = "Years With Current Manager & Years At Company") 
+
+#working PR - salary hike
+input_data %>% ggplot(aes(x = YearsInCurrentRole, y = YearsAtCompany, colour = JobLevel)) + geom_jitter() + ggtitle(label = "Correlation", subtitle = "Years In Current Role & Years At Company") 
+
+#low covariation - General not related to Attrition
+input_data$Attrition <- ifelse(input_data$Attrition=="0", "Yes", "No")
+input_data$Attrition = factor(input_data$Attrition, levels = c("Yes","No"))
+
+input_data %>% ggplot(aes(x = NumCompaniesWorked, y = MonthlyIncome, colour = Attrition)) + geom_jitter() + ggtitle(label = "Correlation", subtitle = "Monthly Income & Number of Companies Worked") 
+
+input_data %>% select(MonthlyIncome, Education, Attrition) %>% arrange(MonthlyIncome, Education) %>% ggpairs(aes(color=Attrition, alpha = 0.5), legend = 1, lower = list(continuous = "points", combo = "box_no_facet"), upper = list(continuous = "points"))
+
+ggplot(data = input_data, aes(x = Education, y = MonthlyIncome, fill=Gender)) +geom_boxplot()
+
+
+# KNN Model
+# Training on a 70/30 split with selected factors
+sample_index <- sample(1:nrow(input_data), 0.7 * nrow(input_data))
+train_input_data <- input_data[sample_index, ]
+test_input_data  <- input_data[-sample_index, ]
+
+knn_model = knn(train = train_input_data[,c("MonthlyIncome", "YearsInCurrentRole", "YearsAtCompany", "PerformanceRating", "TotalWorkingYears", "YearsWithCurrManager", "PercentSalaryHike", "JobLevel")], test = test_input_data[,c("MonthlyIncome", "YearsInCurrentRole", "YearsAtCompany", "PerformanceRating", "TotalWorkingYears", "YearsWithCurrManager", "PercentSalaryHike", "JobLevel")], train_input_data$Attrition, k = 7)
+
+CM_knn=confusionMatrix(table(knn_model, test_input_data$Attrition))
+CM_knn
+
+
+#NB Model
+# Training on a 70/30 split with selected factors
+train_indices <- sample(1:nrow(input_data), 0.7 * nrow(input_data))
+
+input_data$MonthlyRate = scale(input_data$MonthlyRate)
+
+#Sensitivity : 0.56522 without any threshold tuning
+train_data <- input_data[train_indices, ][,c("OverTime","Department","StockOptionLevel","EducationField","WorkLifeBalance", "Age","JobInvolvement", "MonthlyIncome", "YearsInCurrentRole", "YearsAtCompany", "PerformanceRating", "TotalWorkingYears", "YearsWithCurrManager", "PercentSalaryHike", "JobLevel", "Attrition")]
+test_data  <- input_data[-train_indices, ][,c("OverTime","Department","StockOptionLevel","EducationField","WorkLifeBalance", "Age","JobInvolvement", "MonthlyIncome", "YearsInCurrentRole", "YearsAtCompany", "PerformanceRating", "TotalWorkingYears", "YearsWithCurrManager", "PercentSalaryHike", "JobLevel", "Attrition")]
+
+model <- naiveBayes(Attrition ~ ., data = train_data)
+
+predictions <- predict(model, test_data)
+table(Predicted = predictions, Actual = test_data$Attrition)
+confusionMatrix(table(Predicted = predictions, Actual = test_data$Attrition), mode = "everything")
+accuracy <- mean(predictions == test_data$Attrition)
+print(accuracy)
+#Sensitivity : 0.56522 without any threshold tuning
+# To maximize Sensitivity we lower threshold
+
+
+# model for tuning threshold
+model2 <- naiveBayes(Attrition ~ ., data = train_data)
+
+predictions2 <- predict(model2, test_data, type = "raw")[,"Yes"]
+roc_obj <- roc(response = test_data$Attrition, predictor = predictions2,
+               levels = c("No","Yes"), direction = "<")  # "<" means higher probs => "Yes"
+
+# Pick the threshold that maximizes Youden's J (sensitivity + specificity - 1)
+best <- coords(roc_obj, x = "best", best.method = "youden")
+
+best_threshold <- best$threshold
+best_sens      <- best$sensitivity
+best_spec      <- best$specificity
+best_auc       <- auc(roc_obj)
+
+cat(sprintf("Chosen threshold: %.4f | AUC: %.3f | Sens: %.3f | Spec: %.3f\n",
+            best_threshold, best_auc, best_sens, best_spec))
+
+
+pred_class <- ifelse(predictions2 >= 0.42, "Yes", "No")
+pred_class <- factor(pred_class, levels = c("Yes","No"))
+
+# Confusion matrix
+cm <- confusionMatrix(table(Predicted = pred_class, Actual = test_data$Attrition))
+print(cm)
+
+
+
+#comp_data = read.csv("/Users/safi/OneDrive/SMU/MSDS_6306_Doing-Data-Science/Unit 8 and 9 Case Study 1/CaseStudy1CompSet No Attrition.csv", header=TRUE)
+comp_data = read.csv(file.choose(),header = TRUE)
+
+#convert business travel to a number as others
+comp_data$BusinessTravel[comp_data$BusinessTravel == "Travel_Frequently"] <- 1
+comp_data$BusinessTravel[comp_data$BusinessTravel == "Travel_Rarely"] <- 2
+comp_data$BusinessTravel[comp_data$BusinessTravel == "Travel_Frequently"] <- 3
+comp_data$BusinessTravel = as.numeric(comp_data$BusinessTravel)
+#
+comp_data$Department[comp_data$Department == "Research & Development"] <- 1
+comp_data$Department[comp_data$Department == "Human Resources"] <- 2
+comp_data$Department[comp_data$Department == "Sales"] <- 3
+comp_data$Department = as.numeric(comp_data$Department)
+#
+comp_data$Gender[comp_data$Gender == "Male"] <- 1
+comp_data$Gender[comp_data$Gender == "Female"] <- 2
+comp_data$Gender = as.numeric(comp_data$Gender)
+#
+comp_data$OverTime[comp_data$OverTime == "Yes"] <- 1
+comp_data$OverTime[comp_data$OverTime == "No"] <- 0
+comp_data$OverTime = as.numeric(comp_data$OverTime)
+#
+numeric_df_comp <- comp_data %>% select(where(is.numeric))
+numeric_df_comp$EmployeeCount <- NULL #because its not changing
+numeric_df_comp$StandardHours <- NULL #because its not changing
+numeric_df_comp$MonthlyRate = scale(numeric_df_comp$MonthlyRate)
+
+pc<-predict(model2, newdata=numeric_df_comp[,c("OverTime","Department","StockOptionLevel","WorkLifeBalance", "Age","JobInvolvement", "MonthlyIncome", "YearsInCurrentRole", "YearsAtCompany", "PerformanceRating", "TotalWorkingYears", "YearsWithCurrManager", "PercentSalaryHike", "JobLevel")], type="raw")[,"Yes"]
+best_threshold <- 0.42
+final_pred <- ifelse(pc >= best_threshold, "Yes", "No")
+head(final_pred)
+
+results_df <- data.frame(
+  ID = numeric_df_comp$ID,
+  Attrition = final_pred
+)
+predictions_final <- c()
+
+
+write.csv(results_df, "Case1PredictionsMuhammad Attrition.csv", row.names = FALSE)
+
+
+
+
+
+```
